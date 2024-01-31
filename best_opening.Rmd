@@ -1,0 +1,313 @@
+---
+title: "Which Chess Opening is Best for Your Rating?"
+author: "Mairead Shaw"
+date: "January 21, 2024"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r echo=F, message=F}
+# pre-processing needed for later graphs
+library(ggplot2) # graphing
+library(dplyr) # pipe and data manipulation
+library(glue)
+
+dat <- read.csv('data/lichess_db_standard_rated_2014-07_processed.csv', stringsAsFactors = F)
+
+# Clean data --------------------------------------------------------------
+
+# remove draws and add elo groups
+openings <- dat %>% 
+  filter(WhiteWins != 0.5) %>% 
+  mutate(RatingDiff = WhiteElo - BlackElo) # rating difference
+openings$WhiteEloGroup <- cut(openings$WhiteElo, breaks = seq(0, 2000, by = 100), labels = F)
+openings$BlackEloGroup <- cut(openings$BlackElo, breaks = seq(0, 2000, by = 100), labels = F)
+
+# Let's cut out some outliers, let's just keep the main 95% of RatingDiff values
+lower_bound <- mean(openings$RatingDiff) - 1.96*sd(openings$RatingDiff)
+upper_bound <- mean(openings$RatingDiff) + 1.96*sd(openings$RatingDiff)
+openings <- openings %>% 
+  filter(RatingDiff >= lower_bound & RatingDiff <= upper_bound)
+
+# retrieve top 10 openings
+common_openings <- sort(table(dat$ECO), decreasing = TRUE)[1:10]
+
+# filter to top 10 openings
+openings <- openings %>% 
+  filter(ECO %in% rownames(common_openings)) # filter to top 10 openings
+
+# Let's look at the top 5, to keep analyses manageable
+openings <- openings %>% 
+  filter(ECO %in% rownames(common_openings)[1:5])
+```
+
+When I started trying to improve at chess, one of the first things I felt I needed to learn was an opening, for two reasons. First, the opening is sequentially first in the game, before the middlegame and endgame, and it can set you up well or poorly for later stages. Second, essentially every opening has a name and they are casually referenced in chess broadcasts and by more experienced players. Do you play the Sicilian? The Italian? The Ruy Lopez? And so on. The preponderance of names led to some confusion for me — which opening should I start with, how will I remember all these names? 
+
+The Internet and thousands of books are full of teachings for different openings. But for someone just starting their chess journey, that can lead to information overload. To help novices choosing an opening, I analyzed over 200,000 games from the lichess database to determine how five common opening strategies perform at different rating levels.
+
+## Data Processing
+
+I downloaded Portable Game Notation (PGN) data on over 1 million games played on lichess in July of 2014 from the [lichess database](https://database.lichess.org/). I converted it from PGN to tabular data by adapting some code written by [Sean Devine](https://github.com/seandamiandevine/chessblog). For the goal of finding the "winningest" openings, I removed 89,045 draws from the data. Some games were also played with very large rating discrepancies (e.g., white rated 900 points higher than black), perhaps reflecting friendly games or instructors and students. Because I am interested in how openings perform in competitive matches, I removed 51,751 games with rating discrepancies more than two standard deviations from the mean rating discrepancy. Finally, I filtered the data to games using the top five openings, as classified by their ECO code. The top five ECO codes accounted for 263,638 games, or 28% of all non-drawn games.
+
+## Who Is Playing What?
+
+The players in the remaining data had ratings ranging from 2 to 1864, with a mean of 602.7 and median of 596.
+
+```{r echo=F, message=F}
+# show elo ranges
+all_elos <- data.frame(player = c(openings$White, openings$Black),
+                       elo = c(openings$WhiteElo, openings$BlackElo))
+
+all_elos %>% 
+  ggplot(mapping = aes(x = elo)) +
+  geom_histogram(colour = "black", fill = "black") +
+  theme_bw() +
+  labs(title = "Who's Playing?",
+       x = "Elo", 
+       y = "Count")
+```
+
+Openings in chess are organized into five thematic groups documented in the Encyclopedia of Chess Openings (ECO). Based on their categorization, openings are given an ECO code. You can read more on [Wikipedia](https://en.wikipedia.org/wiki/Encyclopaedia_of_Chess_Openings) or [365Chess](https://www.365chess.com/eco.php), among other places. The top five ECO codes in these data were A00, A40, C00, D00, and B01.
+
+### A00: "Odd" Openings
+
+A00 was used in 78,040 games, and is any opening other than 1.d4 or 1.e4. I considered excluding it as a catch-all category, but beginners unfamiliar with opening principles may find themselves here often. An example A00 opening:
+
+![](boards/A00.jpeg){width=33% height=33%}
+
+### A40: Queen's Pawn
+
+A40 was used in 54,662 games and is the classic Queen's Pawn Opening, 1.d4.
+
+![](boards/A40.jpeg){width=33% height=33%}
+
+### C00: French Defense
+
+C00 was used in 51,048 games, and represents the French defense, 1.e4 e6.
+
+![](boards/C00.jpeg){width=33% height=33%}
+
+### D00: Double Queen's Pawn
+
+D00 was used in 41,569 games, the double Queen's Pawn opening 1. d4 d5.
+
+![](boards/D00.jpeg){width=33% height=33%}
+
+### B01: Scandinavian Defense
+
+B01 was used in 38,319 games, and is the Scandinavian Defense to a King Pawn opening, 1. e4 d5.
+
+![](boards/B01.jpeg){width=33% height=33%}
+
+Opening theory can extend well beyond the first move, but for simplicity we'll stick with these five broad categories of opening theory.
+
+## Which Openings Win?
+
+To calculate which openings were the "winningest," I calculated the proportion of games won by white with a given opening. The best openings for white are those with the highest proportion of wins. Because I removed draws from the data, black's win proportion is the inverse of white's: an opening where white wins 60% of the games is one where black wins the remaining 40% of the games. Win proportions above 0.5 (50% of games) are better for white, below 0.5 are better for black, and around 0.5 are evenly advantageous for white and black.
+
+If we look across all ratings, A40 is the best opening for white, winning 53.8% of the time. B01 (52.5%), C00 (52.0%), and D00 (51.5%) are also advantageous for white, while A00 (49.7%) is slightly advantageous for black.
+
+```{r echo=F}
+# overall win proportions, not accounting for rating
+openings %>% 
+  group_by(ECO) %>% 
+  mutate(propW = sum(WhiteWins)/n()) %>% 
+  ggplot(mapping = aes(x = ECO, y = propW)) +
+  geom_point() +
+  geom_hline(yintercept = 0.50, linetype = 2) +
+  theme_bw() +
+  labs(title = "Win Proportion for White by Opening across All Ratings",
+       subtitle = "From 200,000+ lichess Games",
+       x = "Opening ECO Code", 
+       y = "Proportion of Games Won",
+       caption = "ECO Codes: https://www.365chess.com/eco.php")
+```
+
+Those capture average win proportions across all players, but what if someone with an Elo of 423 wants to learn a new opening? We can improve our recommendation by tracking win proportion by rating range. To do this, I assigned players to groups based on their Elo. A player with Elo between 1 and 100 was in group 1, between 100 and 200 was in group 2, and so on. One could argue, and I would agree, that a player rated 798 is perhaps more similar to one rated 802 than one rated 700, but partitions needed to be placed somewhere and in my experience players tend to think of their rating in their "hundred" band. 
+
+When we partition our data like this, we can make more specific recommendations:
+
+## {.tabset}
+
+### A00
+
+```{r echo=F}
+# data for these graphs
+wins <- openings %>% 
+  group_by(WhiteEloGroup, ECO) %>% 
+  mutate(propW = sum(WhiteWins)/n())
+
+wins %>% 
+  filter(ECO == "A00") %>% 
+  ggplot(mapping = aes(x = WhiteEloGroup, y = propW)) +
+  geom_point() +
+  geom_hline(yintercept = 0.50, linetype = 2) +
+  facet_wrap(~ECO) +
+  theme_bw() +
+  labs(title = "Win Proportion by Opening by Rating",
+       subtitle = "From 200,000+ lichess Games",
+       x = "Elo",
+       y = "Proportion of Games Won",
+       caption = "ECO Codes: https://www.365chess.com/eco.php") +
+  scale_x_continuous(breaks = seq(min(wins$WhiteEloGroup), max(wins$WhiteEloGroup), by = 1), #19 scale breaks
+                     labels = c("1 - 100", "101 - 200", "201 - 300", "301 - 400", "401 - 500",
+                                "501 - 600", "601 - 700", "701 - 800", "801 - 900", "901 - 1000",
+                                "1001 - 1100", "1101 - 1200", "1201 - 1300", "1301 - 1400", "1401 - 1500",
+                                "1501 - 1600", "1601 - 1700", "1701 - 1800", "1801 - 1900")) +
+  scale_y_continuous(breaks = seq(0, 1, by = 0.25),
+                     limits = c(0.00, 1.00)) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1),
+        panel.grid.minor = element_blank())
+
+```
+
+### A40
+
+```{r echo=F}
+
+wins %>% 
+  filter(ECO == "A40") %>% 
+  ggplot(mapping = aes(x = WhiteEloGroup, y = propW)) +
+  geom_point() +
+  geom_hline(yintercept = 0.50, linetype = 2) +
+  facet_wrap(~ECO) +
+  theme_bw() +
+  labs(title = "Win Proportion by Opening by Rating",
+       subtitle = "From 200,000+ lichess Games",
+       x = "Elo",
+       y = "Proportion of Games Won",
+       caption = "ECO Codes: https://www.365chess.com/eco.php") +
+  scale_x_continuous(breaks = seq(min(wins$WhiteEloGroup), max(wins$WhiteEloGroup), by = 1), #19 scale breaks
+                     labels = c("1 - 100", "101 - 200", "201 - 300", "301 - 400", "401 - 500",
+                                "501 - 600", "601 - 700", "701 - 800", "801 - 900", "901 - 1000",
+                                "1001 - 1100", "1101 - 1200", "1201 - 1300", "1301 - 1400", "1401 - 1500",
+                                "1501 - 1600", "1601 - 1700", "1701 - 1800", "1801 - 1900")) +
+  scale_y_continuous(breaks = seq(0, 1, by = 0.25),
+                     limits = c(0.00, 1.00)) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1),
+        panel.grid.minor = element_blank())
+
+```
+
+### B01
+
+```{r echo=F}
+
+wins %>% 
+  filter(ECO == "B01") %>% 
+  ggplot(mapping = aes(x = WhiteEloGroup, y = propW)) +
+  geom_point() +
+  geom_hline(yintercept = 0.50, linetype = 2) +
+  facet_wrap(~ECO) +
+  theme_bw() +
+  labs(title = "Win Proportion by Opening by Rating",
+       subtitle = "From 200,000+ lichess Games",
+       x = "Elo",
+       y = "Proportion of Games Won",
+       caption = "ECO Codes: https://www.365chess.com/eco.php") +
+  scale_x_continuous(breaks = seq(min(wins$WhiteEloGroup), max(wins$WhiteEloGroup), by = 1), #19 scale breaks
+                     labels = c("1 - 100", "101 - 200", "201 - 300", "301 - 400", "401 - 500",
+                                "501 - 600", "601 - 700", "701 - 800", "801 - 900", "901 - 1000",
+                                "1001 - 1100", "1101 - 1200", "1201 - 1300", "1301 - 1400", "1401 - 1500",
+                                "1501 - 1600", "1601 - 1700", "1701 - 1800", "1801 - 1900")) +
+  scale_y_continuous(breaks = seq(0, 1, by = 0.25),
+                     limits = c(0.00, 1.00)) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1),
+        panel.grid.minor = element_blank())
+
+```
+
+### C00
+
+```{r echo=F}
+
+wins %>% 
+  filter(ECO == "C00") %>% 
+  ggplot(mapping = aes(x = WhiteEloGroup, y = propW)) +
+  geom_point() +
+  geom_hline(yintercept = 0.50, linetype = 2) +
+  facet_wrap(~ECO) +
+  theme_bw() +
+  labs(title = "Win Proportion by Opening by Rating",
+       subtitle = "From 200,000+ lichess Games",
+       x = "Elo",
+       y = "Proportion of Games Won",
+       caption = "ECO Codes: https://www.365chess.com/eco.php") +
+  scale_x_continuous(breaks = seq(min(wins$WhiteEloGroup), max(wins$WhiteEloGroup), by = 1), #19 scale breaks
+                     labels = c("1 - 100", "101 - 200", "201 - 300", "301 - 400", "401 - 500",
+                                "501 - 600", "601 - 700", "701 - 800", "801 - 900", "901 - 1000",
+                                "1001 - 1100", "1101 - 1200", "1201 - 1300", "1301 - 1400", "1401 - 1500",
+                                "1501 - 1600", "1601 - 1700", "1701 - 1800", "1801 - 1900")) +
+  scale_y_continuous(breaks = seq(0, 1, by = 0.25),
+                     limits = c(0.00, 1.00)) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1),
+        panel.grid.minor = element_blank())
+
+```
+
+### D00
+
+```{r echo=F}
+
+wins %>% 
+  filter(ECO == "D00") %>% 
+  ggplot(mapping = aes(x = WhiteEloGroup, y = propW)) +
+  geom_point() +
+  geom_hline(yintercept = 0.50, linetype = 2) +
+  facet_wrap(~ECO) +
+  theme_bw() +
+  labs(title = "Win Proportion by Opening by Rating",
+       subtitle = "From 200,000+ lichess Games",
+       x = "Elo",
+       y = "Proportion of Games Won",
+       caption = "ECO Codes: https://www.365chess.com/eco.php") +
+  scale_x_continuous(breaks = seq(min(wins$WhiteEloGroup), max(wins$WhiteEloGroup), by = 1), #19 scale breaks
+                     labels = c("1 - 100", "101 - 200", "201 - 300", "301 - 400", "401 - 500",
+                                "501 - 600", "601 - 700", "701 - 800", "801 - 900", "901 - 1000",
+                                "1001 - 1100", "1101 - 1200", "1201 - 1300", "1301 - 1400", "1401 - 1500",
+                                "1501 - 1600", "1601 - 1700", "1701 - 1800", "1801 - 1900")) +
+  scale_y_continuous(breaks = seq(0, 1, by = 0.25),
+                     limits = c(0.00, 1.00)) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1),
+        panel.grid.minor = element_blank())
+
+```
+
+## {-}
+
+The trend across openings makes some sense: lower Elo players perform worse even when they have initiative as white (you have the initiative to make mistakes), and as players improve the marginal advantage white has in a given game adds up to a solid proportion of games going in white's favour. I suspect results look odd at ratings above 1400 because the number of games played per opening drops from thousands to low hundreds or dozens above 1400. For that reason, I only report recommendations up to a rating of 1400.
+
+The best openings for white and black by Elo are as follows:
+
+| Elo       | White (Proportion of Wins) | Black (Proportion of Wins) |
+|:---------:|:--------------------------:|:--------------------------:|
+| 1-100     | B01 (0.36)                 | C00 (0.72)                 |
+| 101-200   | B01 (0.39)                 | A00 (0.68)                 |
+| 201-300   | B01 (0.43)                 | A00 (0.62)                 |
+| 301-400   | B01 (0.46)                 | A00 (0.58)                 |
+| 401-500   | A40 (0.50)                 | A00 (0.54)                 |
+| 501-600   | A40 (0.52)                 | A00 (0.52)                 |
+| 601-700   | A40 (0.55)                 | A00 (0.47)                 |
+| 701-800   | A40 (0.56)                 | A00 (0.47)                 |
+| 801-900   | A00 (0.60)                 | B01 (0.42)                 |
+| 901-1000  | D00 (0.63)                 | B01 (0.40)                 |
+| 1001-1100 | C00 (0.67)                 | A00 (0.39)                 |
+| 1101-1200 | B01 (0.72)                 | A00 (0.37)                 |
+| 1201-1300 | B01 (0.68)                 | D00 (0.41)                 |
+| 1301-1400 | C00 (0.71)                 | D00 (0.50)                 |
+
+## Closing Thoughts
+
+There we have it! If anyone is overwhelmed by opening choices early in their chess career, they can look at their Elo, reference the table, and pick an option with which at least some other people have had success. As mentioned, there can be significantly greater depth in opening knowledge than one or two moves, but at a beginner level, most people are not prepared to carry on deep lines. I'll close with a few points that helped me clean up my own openings. 
+
+You don't need to choose one opening, memorize the lines, and know its name. Nor do you need to know your opponent's exact opening. A few key principles can carry you successfully to the middlegame.
+
+1. Try to control the centre
+2. Develop your minor pieces (bishops and knights)
+3. Castle for king safety
+4. Respect your opponent's threats
+
+Many formal openings are built around these principles, they just execute them in a certain order or try to set up certain board characteristics that will carry through the middlegame and endgame (open/closed position, doubling opponent pawns, gambits sacrificing pawns early to gain initiative, etc.). Keeping these principles in mind will help you develop your pieces in many different scenarios without specific knowledge of your or your opponent's opening. That said, if you are looking for an opening...maybe reference the table to give yourself a winning chance.
